@@ -1,0 +1,388 @@
+---
+title: "Wine Classification"
+author: "Kevin Nolasco"
+date: "9/30/2020"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+```
+
+# Introduction
+
+The purpose of this project is to determine the Class of wine from 13 attributes. The data that is examined in this project is provided by UCI Machine Learning Repository. Each wine was grown in the same region in Italy although they were processed by three different cultivars. The cultivars are represented by three Classes: 1, 2, or 3. The columns of this dataset are as follows:
+
+  + Class: This is what we are attempting to predict. Factor
+  + Alcohol: Numeric
+  + Malic Acid: Numeric
+  + Ash: Numeric
+  + Alcalinity of Ash: Numeric
+  + Magnesium: Integer
+  + Total Phenols: Numeric
+  + Flavanoids: Numeric
+  + Nonflavanoids Phenols: Numeric
+  + Proanthocyanins: Numeric
+  + Color Intensity: Numeric
+  + Hue: Numeric
+  + OD280/OD315 of diluted wines: Numeric
+  + Proline: Numeric
+
+# Exploring the Data Set
+
+First, we import the dataset and look at the structure.
+
+```{r echo = FALSE}
+
+#reading in the data. clean the data set to make it ready for analysis
+
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+if(!require(ggplot2)) install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+if(!require(rpart.plot)) install.packages("rpart.plot", repos = "http://cran.us.r-project.org")
+
+
+dl <- tempfile()
+download.file("https://archive.ics.uci.edu/ml/machine-learning-databases/wine/wine.data",dl)
+wine_data <- fread(dl)
+
+
+
+#adding column names. These were gathered from the wine.names file at 
+#"https://archive.ics.uci.edu/ml/machine-learning-databases/wine/"
+column_names <- c('Class',
+                  'Alcohol',
+                  'Malic_Acid',
+                  'Ash',
+                  'Alcalinity_of_Ash',
+                  'Magnesium',
+                  'Total_Phenols',
+                  'Flavanoids',
+                  'Nonflavanoids_Phenols',
+                  'Proanthocyanins',
+                  'Color_Intensity',
+                  'Hue',
+                  'OD280/OD315_of_diluted wines',
+                  'Proline')
+
+
+colnames(wine_data) <- column_names
+wine_data$Class <- as.factor(wine_data$Class)
+str(wine_data)
+```
+
+I want to get an idea of the percentage of wines that are Class 1,2, or 3.
+
+```{r echo = FALSE, warning = FALSE, message = FALSE}
+C1 <- mean(wine_data$Class == 1)
+cat("The percentage of Class 1 is: " , C1)
+
+C2 <- mean(wine_data$Class == 2)
+cat("The percentage of Class 2 is: " , C2)
+
+C3 <- mean(wine_data$Class == 3)
+cat("The percentage of Class 3 is: " , C3)
+```
+
+Next, I want to visualize the variables by class. To do this, I will make distributions of the variables and overlap them by class.
+
+```{r fig.height= 4, fig.width= 4 , fig.align= "center" } 
+
+#alcohol
+wine_data %>%
+  ggplot(aes(x = Alcohol, group = Class, fill = Class)) +
+  geom_density(alpha = 0.5)
+
+#Total Phenols
+wine_data %>%
+  ggplot(aes(x = Total_Phenols, group = Class, fill = Class)) +
+  geom_density(alpha = 0.5)
+
+#Flavanoids
+wine_data %>%
+  ggplot(aes(x = Flavanoids, group = Class, fill = Class)) +
+  geom_density(alpha = 0.5)
+
+```
+
+Here, I can see that the distribution of Alcohol, Total Phenols, and Flavanoids by Class is pretty different! I'll keep this in mind. 
+
+```{r fig.height= 4, fig.width= 4 , fig.align= "center"}
+#Malic_acid
+wine_data %>%
+  ggplot(aes(x = Malic_Acid, group = Class, fill = Class)) +
+  geom_density(alpha = 0.5)
+
+#ash
+wine_data %>%
+  ggplot(aes(x = Ash, group = Class, fill = Class)) +
+  geom_density(alpha = 0.5)
+
+#alcalinity of ash
+wine_data %>%
+  ggplot(aes(x = Alcalinity_of_Ash, group = Class, fill = Class)) +
+  geom_density(alpha = 0.5)
+
+#magnesium
+wine_data %>%
+  ggplot(aes(x = Magnesium, group = Class, fill = Class)) +
+  geom_density(alpha = 0.5)
+
+
+#non-flavanoids phenols
+wine_data %>%
+  ggplot(aes(x = Nonflavanoids_Phenols, group = Class, fill = Class)) +
+  geom_density(alpha = 0.5)
+
+#Proanthocyanins
+wine_data %>%
+  ggplot(aes(x = Proanthocyanins, group = Class, fill = Class)) +
+  geom_density(alpha = 0.5)
+
+#Color Intensity
+wine_data %>%
+  ggplot(aes(x = Color_Intensity, group = Class, fill = Class)) +
+  geom_density(alpha = 0.5)
+
+#Hue
+wine_data %>%
+  ggplot(aes(x = Hue, group = Class, fill = Class)) +
+  geom_density(alpha = 0.5)
+
+#OD280/OD315_of_diluted wines
+wine_data %>%
+  ggplot(aes(x = `OD280/OD315_of_diluted wines`, group = Class, fill = Class)) +
+  geom_density(alpha = 0.5)
+
+#proline
+wine_data %>%
+  ggplot(aes(x = Proline, group = Class, fill = Class)) +
+  geom_density(alpha = 0.5)
+```
+
+The rest of the variables have similar distributions by class. There is nothing that strikes out as different.
+
+# Methods/Analysis
+
+To create a predictive model, I created three simple (and naive) models followed by two machine learning models. Before we jump into the models, we separate the dataset into a training and testing set.
+
+```{r warning = FALSE, message = FALSE}
+#the names for the columns I specified were bad
+colnames(wine_data) <- make.names(colnames(wine_data)) 
+set.seed(1, sample.kind = "Rounding")
+test_index <- createDataPartition(wine_data$Class, times = 1, p = 0.25, list = FALSE)
+
+train_set <- wine_data[-test_index]
+test_set <- wine_data[test_index,]
+```
+
+## If/Else Models
+
+### Alcohol Vs Ash
+
+First, let's plot Alcohol vs Ash. Ash's distribution by class showed very little differences. This initial model is meant to be simple.
+
+```{r}
+train_set %>%
+  ggplot(aes(x = Alcohol, y = Ash, col = Class)) + 
+  geom_point(size = 4)
+```
+
+There appears to be groups in the data. The groups are not exclusive, which implies that the If/Else model cannot be 100% accurate. 
+
+The first model is built as follows:
+Wines with alcohol less than or equal to 12.75 are classified as "Class 2". Otherwise, Wines with Alcohol less than or equal to 13.75 are classified as "Class 3". Otherwise, the Wine is classified as "Class 1". These cut-off values are visually inspected.
+
+```{r}
+alcohol_model <- function(val){
+  if(val <= 12.75){
+    2
+  } else if(val <= 13.75){
+    3
+  } else 1
+}
+
+y_hat_alc <- sapply(test_set$Alcohol, alcohol_model)
+y_hat_alc <- as.factor(y_hat_alc)
+method1 <- mean(y_hat_alc == test_set$Class)*100
+
+```
+
+
+```{r echo = FALSE}
+Methods <- c("Just Alcohol")
+Accuracy <- c(method1)
+results_so_far <- data.frame(Methods, Accuracy)
+results_so_far
+```
+
+With this simple model, we get an accuracy of about 78%.
+
+### Alcohol Vs Total Phenols
+
+For the next model, we consider Alcohol and Total Phenols. Let's plot.
+
+```{r}
+train_set %>%
+  ggplot(aes(x = Alcohol, y = Total_Phenols, col = Class)) + 
+  geom_point(size = 4)
+```
+
+There also appear to be gourps in this plot. The groups are a bit more distinct compared to Alcohol vs Ash so we will consider Total Phenols when constructing the If/Else model.
+
+The next model is built as follows:
+Wines with alcohol less than or equal to 12.75 are classified as "Class 2". Otherwise, Wines with Total Phenols greater than or equal to 2.5 are classified as "Class 1". Otherwise, the Wine is classified as "Class 3". These cut-off values are visually inspected.
+
+```{r}
+alc_phen <- function(alc, phen){
+  if (alc <= 12.75){
+    2
+  } else if(phen >= 2.5){
+    1
+  } else 3
+}
+
+y_hat_alc_phen <- mapply(alc_phen, test_set$Alcohol, test_set$Total_Phenols)
+y_hat_alc_phen <- as.factor(y_hat_alc_phen)
+method2 <- mean(y_hat_alc_phen == test_set$Class)*100
+```
+
+```{r echo = FALSE}
+Methods <- c("Just Alcohol", "Alcohol and Total Phenols")
+Accuracy <- c(method1,method2)
+results_so_far <- data.frame(Methods, Accuracy)
+results_so_far
+```
+
+With this improved model, our accuracy increases to 80%!
+
+### Alcohol Vs Flavanoids
+
+For the final If/Else model, we consider Alcohol and Flavanoids. Let's plot.
+
+```{r}
+train_set %>%
+  ggplot(aes(x = Alcohol, y = Flavanoids, col = Class)) + 
+  geom_point(size = 4)
+```
+
+This plot also shows groups! For this If/Else model, we consider both Alcohol and Flavanoids.
+
+The model is built as follows:
+Wines with flavanoids greater than 2.5 are classified as "Class 1". Otherwise, Wines with alcohol less than or equal to 12.5 are classified as "Class 2". Otherwise, the wine is labeled as "Class 3".
+
+```{r}
+alc_flav <- function(alc, flav){
+  if(flav > 2.5){
+    1
+  } else if(alc <= 12.5){
+    2
+  } else
+    3
+}
+
+y_hat_alc_flav <- mapply(alc_flav, test_set$Alcohol, test_set$Flavanoids)
+y_hat_alc_flav <- as.factor(y_hat_alc_flav)
+method3 <- mean(y_hat_alc_flav == test_set$Class)*100
+```
+
+```{r echo = FALSE}
+Methods <- c("Just Alcohol", "Alcohol and Total Phenols", "Alcohol and Flavanoids")
+Accuracy <- c(method1,method2, method3)
+results_so_far <- data.frame(Methods, Accuracy)
+results_so_far
+```
+
+This method gave an accuracy of 77%, similar to the first model.
+
+## Machine Learning Models
+
+### Decision Tree
+
+The first machine learning model is a Decision Tree. The model is constructed using the **train()** function that is part of the *caret* package. The train function uses Cross-Validation to find the optimal Complexity Parameter.
+
+```{r warning = FALSE, message= FALSE}
+set.seed(3, sample.kind = "Rounding") #so that we get consistent results everytime.
+train_rpart <- train(Class ~ ., 
+                     method = "rpart",
+                     tuneGrid = data.frame(cp = seq(0,0.1,0.01)),
+                     data = train_set)
+
+ggplot(train_rpart, highlight = TRUE) 
+
+y_hat_rpart <- predict(train_rpart, test_set) #we make a prediction
+
+method4 <- mean(y_hat_rpart == test_set$Class)*100
+```
+
+```{r echo = FALSE}
+Methods <- c("Just Alcohol", "Alcohol and Total Phenols", "Alcohol and Flavanoids", "Decision Tree")
+Accuracy <- c(method1,method2, method3, method4)
+results_so_far <- data.frame(Methods, Accuracy)
+results_so_far
+```
+
+By using this method, we obtain an accuracy of 93%! We can view the final model to see the decisions that the model created.
+
+```{r echo = FALSE}
+rpart.plot(train_rpart$finalModel, type = 5)
+```
+
+As we can see, Flavanoids, Color Intensity, and Proline were the most important variables for this model.
+
+### Random Forest
+
+The next model is an extension of a Decision Tree. We implement the Random Forest model through the caret's train() function. The train function uses Cross-Validation to find the optimal mtry Parameter.
+
+```{r warning = FALSE, message= FALSE}
+set.seed(6, sample.kind = "Rounding")#so that we get consistent results everytime.
+train_rf <- train(Class ~ .,
+                  data = train_set,
+                  model = "rf",
+                  tuneGrid = data.frame(mtry = seq(0,10,0.5)))
+
+ggplot(train_rf, highlight = TRUE)
+
+y_hat_rf <- predict(train_rf, test_set) 
+method5 <- mean(y_hat_rf == test_set$Class)*100
+```
+
+```{r echo = FALSE}
+Methods <- c("Just Alcohol", "Alcohol and Total Phenols", "Alcohol and Flavanoids", "Decision Tree", "Random Forest")
+Accuracy <- c(method1,method2, method3, method4, method5)
+results_so_far <- data.frame(Methods, Accuracy)
+results_so_far
+```
+
+From this model, our accuracy jumps to 100%! We can observe the variable importance as follows.
+
+```{r echo = FALSE}
+as.data.frame(train_rf$finalModel$importance) %>% arrange(desc(MeanDecreaseGini))
+```
+
+Here we can see the Flavanoids, Color Intensity, and Alcohol had the highest variable importance.
+
+# Results
+
+Below is a table summarizing the accuracies of each method by using the train and test sets.
+```{r echo = FALSE}
+results_so_far %>% arrange(Accuracy, Methods)
+```
+
+I would like to test the Random Forest model with the entire dataset as follows.
+
+```{r warning = FALSE, message= FALSE}
+final_preds <- predict(train_rf, wine_data)
+final_method <- mean(final_preds == wine_data$Class)*100
+cat("The accuracy of Random Forest on the entire dataset is: ",final_method,"%")
+```
+
+
+# Conclusion
+
+By applying a Random Forest algorithm, I was able to perfectly predict the classes of all wines! The results of this project can be extended to classify unknown wine's by their chemical compounds. In order to do that, this data set must be much more detailed. All of the wines that were explored in this project were from the same region in Italy; it is possible that wines from a different country could have similar chemical compounds as these wines which would require a more sophisticated predictive model.
+
+# References
+
+Aeberhard, Stefan. et al (2020). UCI Machine Learning Repository [https://archive.ics.uci.edu/ml/datasets/wine]. Irvine, CA: University of California, School of Information and Computer Science.
